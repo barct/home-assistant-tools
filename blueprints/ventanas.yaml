@@ -1,81 +1,69 @@
 blueprint:
-  name: "Ventanas Abiertas/Cerradas - Sensor de Plantilla"
+  name: Estado lógico de Ventanas Abiertas/Cerradas
   description: >
-    Este blueprint crea un sensor de plantilla que indica "ventanas_abiertas" 
-    o "ventanas_cerradas" en función de la diferencia entre la temperatura exterior e 
-    interior, comparándolas con una temperatura de confort especificada. Se actualiza 
-    automáticamente cuando cambian las temperaturas de los sensores configurados.
-  domain: template
-  min_version: "2024.6.0"
+    Automatización para determinar si las ventanas deberían estar abiertas o cerradas 
+    en función de la temperatura interior, exterior, temperatura de confort y diferencia mínima.
+  domain: automation
   input:
     sensor_exterior:
       name: Sensor de temperatura exterior
-      description: Entidad del sensor que mide la temperatura exterior.
       selector:
         entity:
           domain: sensor
           device_class: temperature
     sensor_interior:
       name: Sensor de temperatura interior
-      description: Entidad del sensor que mide la temperatura interior.
       selector:
         entity:
           domain: sensor
           device_class: temperature
     temperatura_confort:
       name: Temperatura de confort
-      description: "Temperatura de referencia para confort (ej: 20°C)."
       selector:
         number:
-          min: 0
-          max: 50
-          unit_of_measurement: "°C"
+          min: 10
+          max: 40
           step: 0.5
-          mode: box
-      default: 20
+          unit_of_measurement: "°C"
     diferencia_minima:
       name: Diferencia mínima de temperatura
-      description: Diferencia mínima de temperatura para considerar abrir ventanas.
+      default: 1.0
       selector:
         number:
           min: 0
           max: 10
-          unit_of_measurement: "°C"
           step: 0.1
-          mode: box
-      default: 1.0
-  # Variables para usar en la plantilla, mapeando las entradas del blueprint a nombres de variable
-  variables:
-    exterior: !input sensor_exterior
-    interior: !input sensor_interior
-    confort: !input temperatura_confort
-    dif_min: !input diferencia_minima
-  sensor:
-    # Estado del sensor de plantilla calculado con una expresión condicional basada en las temperaturas configuradas
-    state: >-
-      {% set temp_ext = states(exterior) | float(nan) %}
-      {% set temp_int = states(interior) | float(nan) %}
-      {% set temp_confort = confort | float(nan) %}
-      {% set dif = dif_min | float(nan) %}
-      {% if temp_ext - temp_int >= dif and temp_ext > temp_confort %}
-        ventanas_abiertas
-      {% else %}
-        ventanas_cerradas
-      {% endif %}
-    attributes:
-      # (Opcional) Nombre para mostrar del sensor (puede ser cambiado al instanciar el blueprint)
-      friendly_name: "Estado de Ventanas (Abiertas/Cerradas)"
-      # Icono dinámico que cambia según el estado (ventanas abiertas vs cerradas)
-      icon: >-
-        {% set temp_ext = states(exterior) | float(nan) %}
-        {% set temp_int = states(interior) | float(nan) %}
-        {% set temp_confort = confort | float(nan) %}
-        {% set dif = dif_min | float(nan) %}
-        {% if temp_ext - temp_int >= dif and temp_ext > temp_confort %}
-          mdi:window-open
-        {% else %}
-          mdi:window-closed
-        {% endif %}
-    # Disponibilidad: el sensor solo estará "disponible" si los sensores de temperatura tienen valores válidos
-    availability: >-
-      {{ states(exterior) not in ['unknown', 'unavailable'] and states(interior) not in ['unknown', 'unavailable'] }}
+          unit_of_measurement: "°C"
+    accion_ventanas_abiertas:
+      name: Acción si se deben abrir las ventanas
+      selector:
+        action: {}
+    accion_ventanas_cerradas:
+      name: Acción si se deben cerrar las ventanas
+      selector:
+        action: {}
+
+trigger:
+  - platform: state
+    entity_id: !input sensor_exterior
+  - platform: state
+    entity_id: !input sensor_interior
+
+variables:
+  temp_ext: "{{ states(!input sensor_exterior) | float(0) }}"
+  temp_int: "{{ states(!input sensor_interior) | float(0) }}"
+  temp_confort: !input temperatura_confort
+  dif_min: !input diferencia_minima
+  debe_abrir: "{{ (temp_ext - temp_int) >= dif_min and temp_ext > temp_confort }}"
+
+condition: []
+
+action:
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ debe_abrir }}"
+        sequence: !input accion_ventanas_abiertas
+    default: !input accion_ventanas_cerradas
+
+mode: single
