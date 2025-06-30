@@ -1,8 +1,9 @@
 blueprint:
   name: Estado lógico de Ventanas Abiertas/Cerradas
   description: >
-    Automatización para determinar si las ventanas deberían estar abiertas o cerradas 
-    en función de la temperatura interior, exterior, temperatura de confort y diferencia mínima.
+    Esta automatización determina si las ventanas deberían estar abiertas o cerradas
+    en función de la temperatura exterior, interior, la temperatura de confort y la
+    diferencia mínima configurada.
   domain: automation
   input:
     sensor_exterior:
@@ -17,31 +18,35 @@ blueprint:
         entity:
           domain: sensor
           device_class: temperature
-    temperatura_confort:
-      name: Temperatura de confort
+    temperatura_confort_max:
+      name: Temperatura de confort máxima
       selector:
         number:
-          min: 10
-          max: 40
+          min: 15
+          max: 28
           step: 0.5
           unit_of_measurement: "°C"
-    diferencia_minima:
-      name: Diferencia mínima de temperatura
-      default: 1.0
+    temperatura_confort_min:
+      name: Temperatura de confort mínima
+      selector:
+        number:
+          min: 15
+          max: 25
+          step: 0.5
+          unit_of_measurement: "°C"
+    margen_diferencia:
+      name: Diferencia mínima de temperatura para accionar
       selector:
         number:
           min: 0
-          max: 10
+          max: 2
           step: 0.1
           unit_of_measurement: "°C"
-    accion_ventanas_abiertas:
-      name: Acción si se deben abrir las ventanas
+    estado_ventanas_texto:
+      name: input_text donde guardar el estado
       selector:
-        action: {}
-    accion_ventanas_cerradas:
-      name: Acción si se deben cerrar las ventanas
-      selector:
-        action: {}
+        entity:
+          domain: input_text
 
 trigger:
   - platform: state
@@ -50,20 +55,48 @@ trigger:
     entity_id: !input sensor_interior
 
 variables:
-  temp_ext: "{{ states(!input sensor_exterior) | float(0) }}"
-  temp_int: "{{ states(!input sensor_interior) | float(0) }}"
-  temp_confort: !input temperatura_confort
-  dif_min: !input diferencia_minima
-  debe_abrir: "{{ (temp_ext - temp_int) >= dif_min and temp_ext > temp_confort }}"
-
-condition: []
+  sensor_exterior_id: !input sensor_exterior
+  sensor_interior_id: !input sensor_interior
+  temperatura_confort_min_valor: !input temperatura_confort_min
+  temperatura_confort_max_valor: !input temperatura_confort_max
+  estado_ventanas: !input estado_ventanas_texto
+  margen: !input margen_diferencia
 
 action:
-  - choose:
-      - conditions:
-          - condition: template
-            value_template: "{{ debe_abrir }}"
-        sequence: !input accion_ventanas_abiertas
-    default: !input accion_ventanas_cerradas
-
+  - service: input_text.set_value
+    data:
+      entity_id: "{{ estado_ventanas }}"
+      value: >
+        {% set raw_temp_ext = states(sensor_exterior_id) %}
+        {% set raw_temp_int = states(sensor_interior_id) %}
+        {% if raw_temp_ext in ['unknown', 'unavailable'] or raw_temp_int in ['unknown', 'unavailable'] %}
+          unavailable
+        {% else %}
+          {% set temp_ext = raw_temp_ext | float(0) %}
+          {% set temp_int = raw_temp_int | float(0) %}
+          {% set temp_confort_max = temperatura_confort_max_valor | float %}
+          {% set temp_confort_min = temperatura_confort_min_valor | float %}
+          {% set margin = margen | float %}
+          {% set vector = 0 %}
+          {% if temp_int > temp_confort_max %}
+            {% set vector = -1 %}
+          {% elif temp_int < temp_confort_min %}
+            {% set vector = 1 %}
+          {% endif %}
+          {% if vector == 1 and temp_ext > (temp_int + margin) %}
+          Abrir Ventanas
+          {% elif vector == 1  and temp_ext < temp_int %}
+          Cerrar Ventanas
+          {% elif vector == -1 and temp_ext > temp_int  %}
+          Cerrar Ventanas
+          {% elif vector == -1 and temp_ext < (temp_int - margin) %}
+          Abrir Ventanas
+          {% elif vector == 0 and temp_ext < temp_confort_min %}
+          Cerrar Ventanas
+          {% elif vector == 0 and temp_ext > temp_confort_max %}
+          Cerrar Ventanas
+          {% else %}
+          Indistinto
+          {% endif %}
+        {% endif %}
 mode: single
