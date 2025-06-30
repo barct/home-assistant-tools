@@ -3,6 +3,8 @@ This project contains a collection of tools and scripts designed to enhance and 
 
 ## Integration Blueprints
 
-To integrate with Home Assistant, you can use the following blueprint:
+To integrate with Home Assistant, you can use the following blueprints:
 
 - [Ventana Blueprint](blueprints/ventana/ventana.yaml): A pre-configured automation blueprint for managing your smart home windows.
+- [Encendico Stats](blueprints/encendido_stats/encendido_stats.yaml): A blueprint for Accumulated time turned on (every minute)
+
