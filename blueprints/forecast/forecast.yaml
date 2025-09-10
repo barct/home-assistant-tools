@@ -1,0 +1,122 @@
+blueprint:
+  name: Clima – Guardar mínima/máxima diarias
+  description: >
+    Llama weather.get_forecasts (tipo daily) y guarda la máxima y mínima del día elegido
+    en dos helpers input_number. Útil para mostrar en tarjetas o usar en otras automatizaciones.
+  domain: automation
+  input:
+    weather_entity:
+      name: Entidad del clima (weather)
+      description: Entidad weather compatible con get_forecasts
+      selector:
+        entity:
+          domain: weather
+      default: weather.casa_anisacate
+
+    target_max:
+      name: Helper para Máxima (input_number)
+      description: Dónde guardar la temperatura máxima del día
+      selector:
+        entity:
+          domain: input_number
+
+    target_min:
+      name: Helper para Mínima (input_number)
+      description: Dónde guardar la temperatura mínima del día
+      selector:
+        entity:
+          domain: input_number
+
+    run_time:
+      name: Hora diaria de actualización
+      description: Hora local en la que se cargarán los valores
+      default: "00:10:00"
+      selector:
+        time: {}
+
+    run_on_start:
+      name: Ejecutar al iniciar Home Assistant
+      description: También cargar al arrancar (útil si se reinicia)
+      default: true
+      selector:
+        boolean: {}
+
+    day_index:
+      name: Día del pronóstico
+      description: 0 = hoy, 1 = mañana, 2 = pasado…
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 6
+          step: 1
+          mode: slider
+
+mode: single
+max_exceeded: silent
+
+trigger:
+  - platform: time
+    at: !input run_time
+  - platform: homeassistant
+    event: start
+condition:
+  - condition: or
+    conditions:
+      - condition: template
+        value_template: "{{ trigger.platform == 'time' }}"
+      - condition: and
+        conditions:
+          - condition: template
+            value_template: "{{ trigger.platform == 'homeassistant' }}"
+          - condition: template
+            value_template: "{{ iif((!input run_on_start), false, true) }}"
+action:
+  - variables:
+      w: !input weather_entity
+      idx: !input day_index
+
+  - service: weather.get_forecasts
+    target:
+      entity_id: "{{ w }}"
+    data:
+      type: daily
+    response_variable: fc
+
+  - variables:
+      # lista de días del pronóstico para la entidad elegida
+      lista: >
+        {% set key = w %}
+        {% if fc and key in fc and fc[key] and 'forecast' in fc[key] %}
+          {{ fc[key].forecast }}
+        {% else %}
+          {{ [] }}
+        {% endif %}
+      # elemento del día solicitado (hoy=0, mañana=1…)
+      item: "{{ lista[idx] if lista|length > idx else dict() }}"
+      # campos de max/min con tolerancia de nombres
+      max_hoy: "{{ item.temperature if 'temperature' in item else none }}"
+      min_hoy: >
+        {% if 'templow' in item %}{{ item.templow }}
+        {% elif 'temperature_low' in item %}{{ item.temperature_low }}
+        {% else %}{{ none }}{% endif %}
+
+  - choose:
+      - conditions: "{{ max_hoy is not none }}"
+        sequence:
+          - service: input_number.set_value
+            target:
+              entity_id: !input target_max
+            data:
+              value: "{{ max_hoy }}"
+    default: []
+
+  - choose:
+      - conditions: "{{ min_hoy is not none }}"
+        sequence:
+          - service: input_number.set_value
+            target:
+              entity_id: !input target_min
+            data:
+              value: "{{ min_hoy }}"
+    default: []
