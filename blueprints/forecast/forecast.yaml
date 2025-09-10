@@ -1,7 +1,7 @@
 blueprint:
-  name: Clima – Guardar mínima/máxima diarias
+  name: Clima – Guardar mínima/máxima diarias (sin CSV)
   description: >
-    Llama weather.get_forecasts (tipo daily) y guarda la máxima y mínima del día elegido
+    Llama weather.get_forecasts (daily) y guarda la máxima y mínima del día elegido
     en dos helpers input_number. Útil para mostrar en tarjetas o usar en otras automatizaciones.
   domain: automation
   input:
@@ -55,46 +55,44 @@ blueprint:
 mode: single
 max_exceeded: silent
 
+# Variables al nivel superior (se pueden usar en condiciones)
+variables:
+  w: !input weather_entity
+  idx: !input day_index
+  run_on_start_var: !input run_on_start
+
 trigger:
   - platform: time
     at: !input run_time
   - platform: homeassistant
     event: start
+
+# Si es disparo por hora -> siempre corre.
+# Si es por start -> solo corre si run_on_start=true.
 condition:
   - condition: or
     conditions:
       - condition: template
         value_template: "{{ trigger.platform == 'time' }}"
-      - condition: and
-        conditions:
-          - condition: template
-            value_template: "{{ trigger.platform == 'homeassistant' }}"
-          - condition: template
-            value_template: "{{ iif((!input run_on_start), false, true) }}"
-action:
-  - variables:
-      w: !input weather_entity
-      idx: !input day_index
+      - condition: template
+        value_template: "{{ trigger.platform == 'homeassistant' and run_on_start_var }}"
 
+action:
   - service: weather.get_forecasts
     target:
-      entity_id: "{{ w }}"
+      entity_id: !input weather_entity
     data:
       type: daily
     response_variable: fc
 
   - variables:
-      # lista de días del pronóstico para la entidad elegida
       lista: >
-        {% set key = w %}
-        {% if fc and key in fc and fc[key] and 'forecast' in fc[key] %}
-          {{ fc[key].forecast }}
+        {% if fc and w in fc and fc[w] and 'forecast' in fc[w] %}
+          {{ fc[w].forecast }}
         {% else %}
           {{ [] }}
         {% endif %}
-      # elemento del día solicitado (hoy=0, mañana=1…)
       item: "{{ lista[idx] if lista|length > idx else dict() }}"
-      # campos de max/min con tolerancia de nombres
       max_hoy: "{{ item.temperature if 'temperature' in item else none }}"
       min_hoy: >
         {% if 'templow' in item %}{{ item.templow }}
